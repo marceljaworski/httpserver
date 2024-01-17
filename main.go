@@ -19,17 +19,30 @@ func getRoot(w http.ResponseWriter, r *http.Request) {
 	hasSecond := r.URL.Query().Has("second")
 	second := r.URL.Query().Get("second")
 
-	fmt.Printf("%s: got / request. first(%t)=%s, second(%t)=%s\n",
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		fmt.Printf("could no read body %s\n", err)
+	}
+
+	fmt.Printf("%s: got / request. first(%t)=%s, second(%t)=%s, body:\n%s\n",
 		ctx.Value(keyServerAddr),
 		hasFirst, first,
-		hasSecond, second)
+		hasSecond, second,
+		body)
 	io.WriteString(w, "This is my website!\n")
 }
 func getHello(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	fmt.Printf("%s: got /hello request\n", ctx.Value(keyServerAddr))
-	io.WriteString(w, "Hello, HTTP!\n")
+
+	myName := r.PostFormValue("myName")
+	if myName == "" {
+		w.Header().Set("x-missing-field", "myName")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	io.WriteString(w, fmt.Sprintf("Hello, %s!\n", myName))
 }
 
 func main() {
@@ -39,7 +52,7 @@ func main() {
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
 
-	serverOne := &http.Server{
+	server := &http.Server{
 		Addr:    ":3333",
 		Handler: mux,
 		BaseContext: func(l net.Listener) context.Context {
@@ -48,16 +61,22 @@ func main() {
 		},
 	}
 
-	go func() {
-		fmt.Printf("Server One is running at --> localhost%s\n", serverOne.Addr)
-		err := serverOne.ListenAndServe()
-		if errors.Is(err, http.ErrServerClosed) {
-			fmt.Printf("server one closed\n")
-		} else if err != nil {
-			fmt.Printf("error listening for server one: %s\n", err)
-		}
-		cancelCtx()
-	}()
-	<-ctx.Done()
+	fmt.Printf("Server is listening at -> localhost%s\n", server.Addr)
+	err := server.ListenAndServe()
+	if errors.Is(err, http.ErrServerClosed) {
+		fmt.Printf("server closed\n")
+	} else if err != nil {
+		fmt.Printf("error listening for server %s\n", err)
+	}
 
+	// go func() {
+	// 	err := server.ListenAndServe()
+	// 	if errors.Is(err, http.ErrServerClosed) {
+	// 		fmt.Printf("server one closed\n")
+	// 	} else if err != nil {
+	// 		fmt.Printf("error listening for server one: %s\n", err)
+	// 	}
+	// 	}()
+	cancelCtx()
+	<-ctx.Done()
 }
